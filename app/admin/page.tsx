@@ -1,11 +1,14 @@
 "use server";
 
 import { StatCard } from "./components/StatCard";
-import { getAdminDashboardStats } from "@/app/actions/admin";
+import { getAdminDashboardStats, getCaptionStats } from "@/app/actions/admin";
 import Link from "next/link";
 
 export default async function AdminDashboard() {
-  const stats = await getAdminDashboardStats();
+  const [stats, captionStats] = await Promise.all([
+    getAdminDashboardStats(),
+    getCaptionStats(),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -57,8 +60,64 @@ export default async function AdminDashboard() {
         />
       </div>
 
+      {/* Caption Quality Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Avg Caption Rating"
+          value={captionStats.avgRating.toFixed(1) + "%"}
+          subtitle="Upvote percentage across all captions"
+        />
+        <StatCard
+          title="Captions With Votes"
+          value={captionStats.captionsWithVotes}
+          subtitle={`${((captionStats.captionsWithVotes / captionStats.totalCaptions) * 100).toFixed(0)}% of total`}
+        />
+        <StatCard
+          title="5⭐ Quality Captions"
+          value={captionStats.ratingDistribution.five_star}
+          subtitle=">80% upvotes"
+        />
+        <StatCard
+          title="Controversial"
+          value={captionStats.controversial.length}
+          subtitle="Balanced upvote/downvote split"
+        />
+      </div>
+
       {/* Top & Trending */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Controversial Captions */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-100 dark:border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            ⚔️ Most Controversial
+          </h2>
+          <div className="space-y-3">
+            {captionStats.controversial && captionStats.controversial.length > 0 ? (
+              captionStats.controversial.map((caption: any, idx: number) => (
+                <div
+                  key={caption.id}
+                  className="flex items-start justify-between py-2 border-b border-gray-100 dark:border-slate-700 last:border-b-0"
+                >
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-900 dark:text-slate-100 line-clamp-2">
+                      {caption.content}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                      👍 {caption.upvotes} • 👎 {caption.downvotes} • {caption.upvote_percent.toFixed(0)}% upvotes
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-slate-400">No controversial captions found</p>
+            )}
+          </div>
+        </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-slate-400">No controversial captions found</p>
+            )}
+          </div>
+        </div>
         {/* Top Voted Captions */}
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-100 dark:border-slate-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -154,9 +213,9 @@ export default async function AdminDashboard() {
           >
             <div className="text-center">
               <p className="text-2xl mb-2">📝</p>
-              <p className="font-medium text-gray-900 dark:text-white">View Captions</p>
+              <p className="font-medium text-gray-900 dark:text-white">Manage Captions</p>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                Read-only caption library
+                CRUD + analytics
               </p>
             </div>
           </Link>

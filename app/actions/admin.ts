@@ -808,3 +808,278 @@ export async function getCaptionsForFlavor(flavorId: number) {
   if (error) throw error;
   return data || [];
 }
+
+// Caption Statistics
+export async function getCaptionRatingDistribution() {
+  await requireSuperadmin();
+  const supabase = await createSupabaseServerClient();
+
+  const { data: captions, error: captionError } = await supabase
+    .from("captions")
+    .select("id");
+
+  if (captionError) throw captionError;
+
+  const { data: allVotes, error: voteError } = await supabase
+    .from("caption_votes")
+    .select("caption_id, vote_value");
+
+  if (voteError) throw voteError;
+
+  // Compute vote ratios per caption
+  const votesByCaption = new Map<
+    string,
+    { upvotes: number; downvotes: number }
+  >();
+
+  allVotes?.forEach((vote: any) => {
+    if (!votesByCaption.has(vote.caption_id)) {
+      votesByCaption.set(vote.caption_id, { upvotes: 0, downvotes: 0 });
+    }
+    if (vote.vote_value === 1) {
+      votesByCaption.get(vote.caption_id)!.upvotes++;
+    } else {
+      votesByCaption.get(vote.caption_id)!.downvotes++;
+    }
+  });
+
+  // Categorize captions by rating tiers (0-5 stars based on upvote %)
+  const distribution = {
+    five_star: 0,    // >80% upvotes
+    four_star: 0,    // 60-80% upvotes
+    three_star: 0,   // 40-60% upvotes
+    two_star: 0,     // 20-40% upvotes
+    one_star: 0,     // ≤20% upvotes
+    no_votes: 0,     // no votes
+  };
+
+  (captions || []).forEach((cap: any) => {
+    const votes = votesByCaption.get(cap.id);
+    if (!votes || (votes.upvotes === 0 && votes.downvotes === 0)) {
+      distribution.no_votes++;
+    } else {
+      const total = votes.upvotes + votes.downvotes;
+      const upvotePercent = (votes.upvotes / total) * 100;
+
+      if (upvotePercent > 80) {
+        distribution.five_star++;
+      } else if (upvotePercent > 60) {
+        distribution.four_star++;
+      } else if (upvotePercent > 40) {
+        distribution.three_star++;
+      } else if (upvotePercent > 20) {
+        distribution.two_star++;
+      } else {
+        distribution.one_star++;
+      }
+    }
+  });
+
+  return distribution;
+}
+
+export interface ControversialCaption {
+  id: string;
+  content: string | null;
+  upvotes: number;
+  downvotes: number;
+  total_votes: number;
+  upvote_percent: number;
+}
+
+export async function getMostControversialCaptions(
+  limit: number = 5
+): Promise<ControversialCaption[]> {
+  await requireSuperadmin();
+  const supabase = await createSupabaseServerClient();
+
+  const { data: captions, error: captionError } = await supabase
+    .from("captions")
+    .select("id, content");
+
+  if (captionError) throw captionError;
+
+  const { data: allVotes, error: voteError } = await supabase
+    .from("caption_votes")
+    .select("caption_id, vote_value");
+
+  if (voteError) throw voteError;
+
+  // Compute vote counts per caption
+  const votesByCaption = new Map<
+    string,
+    { upvotes: number; downvotes: number }
+  >();
+
+  allVotes?.forEach((vote: any) => {
+    if (!votesByCaption.has(vote.caption_id)) {
+      votesByCaption.set(vote.caption_id, { upvotes: 0, downvotes: 0 });
+    }
+    if (vote.vote_value === 1) {
+      votesByCaption.get(vote.caption_id)!.upvotes++;
+    } else {
+      votesByCaption.get(vote.caption_id)!.downvotes++;
+    }
+  });
+
+  // Find controversial: high vote count (≥10) AND close split (40-60% upvotes)
+  const controversial = (captions || [])
+    .map((cap: any) => {
+      const votes = votesByCaption.get(cap.id);
+      const upvotes = votes?.upvotes || 0;
+      const downvotes = votes?.downvotes || 0;
+      const total = upvotes + downvotes;
+      const upvotePercent = total > 0 ? (upvotes / total) * 100 : 0;
+
+      return {
+        id: cap.id,
+        content: cap.content,
+        upvotes,
+        downvotes,
+        total_votes: total,
+        upvote_percent: upvotePercent,
+      };
+    })
+    .filter((cap) => cap.total_votes >= 10 && cap.upvote_percent >= 40 && cap.upvote_percent <= 60)
+    .sort((a, b) => {
+      // Sort by closeness to 50% (most controversial first)
+      const aDistance = Math.abs(a.upvote_percent - 50);
+      const bDistance = Math.abs(b.upvote_percent - 50);
+      return aDistance - bDistance;
+    })
+    .slice(0, limit);
+
+  return controversial;
+}
+
+export interface CaptionEngagementMetric {
+  id: string;
+  content: string | null;
+  image_id: string;
+  total_votes: number;
+  upvotes: number;
+  downvotes: number;
+  rating_percent: number;
+  created_datetime_utc: string;
+  last_vote_datetime_utc: string | null;
+}
+
+export async function getCaptionEngagementMetrics(): Promise<
+  CaptionEngagementMetric[]
+> {
+  await requireSuperadmin();
+  const supabase = await createSupabaseServerClient();
+
+  const { data: captions, error: captionError } = await supabase
+    .from("captions")
+    .select("id, content, image_id, created_datetime_utc");
+
+  if (captionError) throw captionError;
+
+  const { data: allVotes, error: voteError } = await supabase
+    .from("caption_votes")
+    .select("caption_id, vote_value, created_datetime_utc");
+
+  if (voteError) throw voteError;
+
+  // Compute vote stats per caption with latest vote timestamp
+  const votesByCaption = new Map<
+    string,
+    {
+      upvotes: number;
+      downvotes: number;
+      latest_vote: string | null;
+    }
+  >();
+
+  allVotes?.forEach((vote: any) => {
+    if (!votesByCaption.has(vote.caption_id)) {
+      votesByCaption.set(vote.caption_id, {
+        upvotes: 0,
+        downvotes: 0,
+        latest_vote: null,
+      });
+    }
+    const current = votesByCaption.get(vote.caption_id)!;
+    if (vote.vote_value === 1) {
+      current.upvotes++;
+    } else {
+      current.downvotes++;
+    }
+    // Keep track of most recent vote
+    if (!current.latest_vote || vote.created_datetime_utc > current.latest_vote) {
+      current.latest_vote = vote.created_datetime_utc;
+    }
+  });
+
+  // Build engagement metrics
+  const metrics = (captions || [])
+    .map((cap: any) => {
+      const votes = votesByCaption.get(cap.id);
+      const upvotes = votes?.upvotes || 0;
+      const downvotes = votes?.downvotes || 0;
+      const total = upvotes + downvotes;
+      const ratingPercent = total > 0 ? (upvotes / total) * 100 : 0;
+
+      return {
+        id: cap.id,
+        content: cap.content,
+        image_id: cap.image_id,
+        total_votes: total,
+        upvotes,
+        downvotes,
+        rating_percent: ratingPercent,
+        created_datetime_utc: cap.created_datetime_utc,
+        last_vote_datetime_utc: votes?.latest_vote || null,
+      };
+    })
+    .sort((a, b) => {
+      // Sort by total votes descending, then by recency
+      if (b.total_votes !== a.total_votes) {
+        return b.total_votes - a.total_votes;
+      }
+      const aDate = a.last_vote_datetime_utc || a.created_datetime_utc;
+      const bDate = b.last_vote_datetime_utc || b.created_datetime_utc;
+      return bDate.localeCompare(aDate);
+    });
+
+  return metrics;
+}
+
+export interface CaptionStats {
+  ratingDistribution: Awaited<ReturnType<typeof getCaptionRatingDistribution>>;
+  controversial: ControversialCaption[];
+  avgRating: number;
+  captionsWithVotes: number;
+  totalCaptions: number;
+}
+
+export async function getCaptionStats(): Promise<CaptionStats> {
+  const [distribution, controversial, metrics, { count: totalCaptions }] =
+    await Promise.all([
+      getCaptionRatingDistribution(),
+      getMostControversialCaptions(5),
+      getCaptionEngagementMetrics(),
+      (async () => {
+        const supabase = await createSupabaseServerClient();
+        const result = await supabase
+          .from("captions")
+          .select("*", { count: "exact" });
+        return result;
+      })(),
+    ]);
+
+  const captionsWithVotes = metrics.filter((m) => m.total_votes > 0).length;
+  const avgRating =
+    metrics.length > 0
+      ? metrics.reduce((sum, m) => sum + m.rating_percent, 0) / metrics.length
+      : 0;
+
+  return {
+    ratingDistribution: distribution,
+    controversial,
+    avgRating,
+    captionsWithVotes,
+    totalCaptions: totalCaptions || 0,
+  };
+}
