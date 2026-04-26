@@ -113,11 +113,6 @@ export default async function AdminDashboard() {
             )}
           </div>
         </div>
-            ) : (
-              <p className="text-sm text-gray-500 dark:text-slate-400">No controversial captions found</p>
-            )}
-          </div>
-        </div>
         {/* Top Voted Captions */}
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-100 dark:border-slate-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">

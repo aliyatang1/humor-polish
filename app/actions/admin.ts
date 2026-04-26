@@ -429,6 +429,90 @@ export async function deleteHumorFlavor(id: number) {
   return true;
 }
 
+export async function duplicateHumorFlavor(
+  sourceFlavorId: number,
+  newSlug: string,
+  newDescription: string
+) {
+  await requireSuperadmin();
+  const supabase = await createSupabaseServerClient();
+
+  // Fetch source flavor
+  const { data: sourceFlavor, error: flavorError } = await supabase
+    .from("humor_flavors")
+    .select("*")
+    .eq("id", sourceFlavorId)
+    .single();
+
+  if (flavorError || !sourceFlavor) {
+    throw new Error("Source flavor not found");
+  }
+
+  // Check if new slug is unique
+  const { data: existingFlavor, error: checkError } = await supabase
+    .from("humor_flavors")
+    .select("id")
+    .eq("slug", newSlug)
+    .single();
+
+  if (checkError && checkError.code !== "PGRST116") {
+    throw checkError;
+  }
+
+  if (existingFlavor) {
+    throw new Error("A flavor with this slug already exists");
+  }
+
+  // Fetch source steps
+  const { data: sourceSteps, error: stepsError } = await supabase
+    .from("humor_flavor_steps")
+    .select("*")
+    .eq("humor_flavor_id", sourceFlavorId)
+    .order("order_by", { ascending: true });
+
+  if (stepsError) throw stepsError;
+
+  // Create new flavor
+  const { data: newFlavor, error: createFlavorError } = await supabase
+    .from("humor_flavors")
+    .insert([
+      {
+        description: newDescription,
+        slug: newSlug,
+        created_datetime_utc: new Date().toISOString(),
+      },
+    ])
+    .select()
+    .single();
+
+  if (createFlavorError) throw createFlavorError;
+
+  // Create new steps
+  if (sourceSteps && sourceSteps.length > 0) {
+    const newSteps = sourceSteps.map((step) => ({
+      humor_flavor_id: newFlavor.id,
+      order_by: step.order_by,
+      llm_temperature: step.llm_temperature,
+      llm_input_type_id: step.llm_input_type_id,
+      llm_output_type_id: step.llm_output_type_id,
+      llm_model_id: step.llm_model_id,
+      humor_flavor_step_type_id: step.humor_flavor_step_type_id,
+      llm_system_prompt: step.llm_system_prompt,
+      llm_user_prompt: step.llm_user_prompt,
+      description: step.description,
+      created_datetime_utc: new Date().toISOString(),
+    }));
+
+    const { error: createStepsError } = await supabase
+      .from("humor_flavor_steps")
+      .insert(newSteps);
+
+    if (createStepsError) throw createStepsError;
+  }
+
+  return newFlavor;
+}
+
 // Humor Flavor Steps Management
 export async function getHumorFlavorSteps(flavorId: number) {
   await requireSuperadmin();

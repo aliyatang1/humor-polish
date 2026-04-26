@@ -14,6 +14,7 @@ import {
   testHumorFlavorOnImage,
   getImages,
   getLLMResponsesByFlavorId,
+  duplicateHumorFlavor,
 } from "@/app/actions/admin";
 
 interface HumorFlavor {
@@ -58,6 +59,12 @@ export default function HumorFlavorsPage() {
   const [showCreateFlavor, setShowCreateFlavor] = useState(false);
   const [createFlavorData, setCreateFlavorData] = useState({ description: "", slug: "" });
   const [creatingFlavor, setCreatingFlavor] = useState(false);
+
+  // Duplicate state
+  const [showDuplicateFlavor, setShowDuplicateFlavor] = useState(false);
+  const [duplicateFlavorId, setDuplicateFlavorId] = useState<number | null>(null);
+  const [duplicateFlavorData, setDuplicateFlavorData] = useState({ description: "", slug: "" });
+  const [duplicatingFlavor, setDuplicatingFlavor] = useState(false);
 
   // Step state
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
@@ -185,6 +192,28 @@ export default function HumorFlavorsPage() {
       loadFlavors();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete flavor");
+    }
+  }
+
+  async function handleDuplicateFlavor(e: React.FormEvent) {
+    e.preventDefault();
+    if (!duplicateFlavorId || !duplicateFlavorData.description.trim() || !duplicateFlavorData.slug.trim()) {
+      setError("Please fill in all duplicate flavor fields");
+      return;
+    }
+
+    try {
+      setDuplicatingFlavor(true);
+      setError(null);
+      await duplicateHumorFlavor(duplicateFlavorId, duplicateFlavorData.slug, duplicateFlavorData.description);
+      setDuplicateFlavorData({ description: "", slug: "" });
+      setShowDuplicateFlavor(false);
+      setDuplicateFlavorId(null);
+      loadFlavors();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to duplicate flavor");
+    } finally {
+      setDuplicatingFlavor(false);
     }
   }
 
@@ -385,6 +414,48 @@ export default function HumorFlavorsPage() {
           </div>
         )}
 
+        {showDuplicateFlavor && (
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Duplicate Flavor</h3>
+            <form onSubmit={handleDuplicateFlavor} className="space-y-3">
+              <input
+                type="text"
+                placeholder="New Slug (must be unique)"
+                value={duplicateFlavorData.slug}
+                onChange={(e) => setDuplicateFlavorData({ ...duplicateFlavorData, slug: e.target.value })}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <textarea
+                placeholder="New Description"
+                value={duplicateFlavorData.description}
+                onChange={(e) => setDuplicateFlavorData({ ...duplicateFlavorData, description: e.target.value })}
+                rows={2}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <div className="flex space-x-2">
+                <button
+                  type="submit"
+                  disabled={duplicatingFlavor}
+                  className="bg-orange-600 dark:bg-orange-700 text-white px-3 py-2 rounded text-sm font-medium hover:bg-orange-700 dark:hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {duplicatingFlavor ? "Duplicating..." : "Duplicate"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDuplicateFlavor(false);
+                    setDuplicateFlavorData({ description: "", slug: "" });
+                    setDuplicateFlavorId(null);
+                  }}
+                  className="bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-2 rounded text-sm font-medium hover:bg-gray-400 dark:hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 overflow-hidden">
           {loading ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>
@@ -466,6 +537,17 @@ export default function HumorFlavorsPage() {
                             className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium text-xs"
                           >
                             View Steps
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDuplicateFlavorId(flavor.id);
+                              setDuplicateFlavorData({ description: `Copy of ${flavor.description}`, slug: `${flavor.slug}-copy` });
+                              setShowDuplicateFlavor(true);
+                            }}
+                            className="text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium text-xs"
+                          >
+                            Duplicate
                           </button>
                           <button
                             onClick={(e) => {

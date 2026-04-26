@@ -1,12 +1,13 @@
 "use server";
 
 import CaptionsPageWrapper from "./CaptionsPageWrapper";
-import { getCaptionEngagementMetrics, getCaptionRatingDistribution } from "@/app/actions/admin";
+import { getCaptionEngagementMetrics, getCaptionRatingDistribution, getCaptions } from "@/app/actions/admin";
 
 export default async function CaptionsPage() {
-  const [metrics, ratingDistribution] = await Promise.all([
+  const [metrics, ratingDistribution, initialCaptions] = await Promise.all([
     getCaptionEngagementMetrics(),
     getCaptionRatingDistribution(),
+    getCaptions(),
   ]);
 
   const analyticsData = {
@@ -14,5 +15,5 @@ export default async function CaptionsPage() {
     ratingDistribution,
   };
 
-  return <CaptionsPageWrapper analyticsData={analyticsData} />;
+  return <CaptionsPageWrapper initialCaptions={initialCaptions} analyticsData={analyticsData} />;
 }
